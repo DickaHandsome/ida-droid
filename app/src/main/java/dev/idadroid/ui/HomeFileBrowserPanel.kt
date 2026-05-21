@@ -85,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.idadroid.files.ContainerFileEntry
 import dev.idadroid.files.ContainerFileManager
+import dev.idadroid.files.RootfsFileSharing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,9 +113,9 @@ fun HomeFileBrowserPanel(fileManager: ContainerFileManager) {
     var error by remember { mutableStateOf<String?>(null) }
     var createKind by remember { mutableStateOf<String?>(null) }
     var createName by remember { mutableStateOf("") }
-    var preview by remember { mutableStateOf<Pair<ContainerFileEntry, String>?>(null) }
     var actionEntry by remember { mutableStateOf<ContainerFileEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<ContainerFileEntry?>(null) }
+    var saveAsEntry by remember { mutableStateOf<ContainerFileEntry?>(null) }
     var showApps by remember { mutableStateOf(false) }
     var apps by remember { mutableStateOf<List<InstalledAppInfo>>(emptyList()) }
     var appsLoading by remember { mutableStateOf(false) }
@@ -161,6 +162,38 @@ fun HomeFileBrowserPanel(fileManager: ContainerFileManager) {
             loading = false
             reload()
         }
+    }
+
+    val saveAsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val entry = saveAsEntry
+        saveAsEntry = null
+        if (uri == null || entry == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            loading = true
+            error = null
+            runCatching { fileManager.saveFileAs(entry.path, uri) }
+                .onFailure { error = "另存为失败：${it.message}" }
+            loading = false
+        }
+    }
+
+    fun openFile(entry: ContainerFileEntry) {
+        if (entry.type != "file") return
+        scope.launch {
+            error = null
+            runCatching { fileManager.fileForSharing(entry.path) }
+                .onSuccess { file ->
+                    runCatching { RootfsFileSharing.openFile(context, file) }
+                        .onFailure { error = "打开失败：${it.message}" }
+                }
+                .onFailure { error = "打开失败：${it.message}" }
+        }
+    }
+
+    fun saveAs(entry: ContainerFileEntry) {
+        if (entry.type != "file") return
+        saveAsEntry = entry
+        saveAsLauncher.launch(entry.name)
     }
 
     if (showApps) {
@@ -304,8 +337,7 @@ fun HomeFileBrowserPanel(fileManager: ContainerFileManager) {
                     HomeFileRow(
                         entry = entry,
                         onOpen = {
-                            if (entry.type == "directory") path = entry.path
-                            else scope.launch { runCatching { fileManager.readFileText(entry.path) }.onSuccess { preview = entry to it }.onFailure { error = it.message } }
+                            if (entry.type == "directory") path = entry.path else openFile(entry)
                         },
                         onMore = { actionEntry = entry }
                     )
@@ -333,12 +365,16 @@ fun HomeFileBrowserPanel(fileManager: ContainerFileManager) {
                 )
             } else {
                 ListItem(
-                    headlineContent = { Text("预览文本") },
+                    headlineContent = { Text("打开/编辑") },
+                    supportingContent = { Text("通过 Android 内容提供器交给外部应用") },
                     leadingContent = { Icon(Icons.Rounded.Visibility, contentDescription = null) },
-                    modifier = Modifier.clickable {
-                        actionEntry = null
-                        scope.launch { runCatching { fileManager.readFileText(entry.path) }.onSuccess { preview = entry to it }.onFailure { error = it.message } }
-                    }
+                    modifier = Modifier.clickable { actionEntry = null; openFile(entry) }
+                )
+                ListItem(
+                    headlineContent = { Text("另存为") },
+                    supportingContent = { Text("使用系统文件选择器保存到本地") },
+                    leadingContent = { Icon(Icons.Rounded.ContentCopy, contentDescription = null) },
+                    modifier = Modifier.clickable { actionEntry = null; saveAs(entry) }
                 )
             }
             ListItem(
@@ -362,18 +398,6 @@ fun HomeFileBrowserPanel(fileManager: ContainerFileManager) {
             dismissButton = { TextButton(onClick = { deleteEntry = null }) { Text("取消") } },
             title = { Text("删除 ${entry.name}") },
             text = { Text("确定删除 ${entry.path}？") }
-        )
-    }
-    preview?.let { (entry, body) ->
-        AlertDialog(
-            onDismissRequest = { preview = null },
-            confirmButton = { TextButton(onClick = { preview = null }) { Text("关闭") } },
-            title = { Text(entry.name) },
-            text = {
-                Column(Modifier.height(420.dp).verticalScroll(rememberScrollState())) {
-                    Text(body, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-                }
-            }
         )
     }
 }

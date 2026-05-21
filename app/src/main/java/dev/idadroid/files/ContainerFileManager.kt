@@ -73,6 +73,19 @@ class ContainerFileManager(
         if (file.isDirectory) file.deleteRecursively() else file.delete()
     }
 
+    suspend fun fileForSharing(path: String): File = withContext(Dispatchers.IO) {
+        val file = guestFile(path)
+        require(file.isFile) { "文件不存在：${normalizeGuestPath(path)}" }
+        file
+    }
+
+    suspend fun saveFileAs(path: String, destination: Uri) = withContext(Dispatchers.IO) {
+        val file = guestFile(path)
+        require(file.isFile) { "文件不存在：${normalizeGuestPath(path)}" }
+        val output = appContext.contentResolver.openOutputStream(destination, "wt") ?: error("无法写入目标文件")
+        output.use { target -> file.inputStream().use { source -> source.copyTo(target) } }
+    }
+
     suspend fun readFileText(path: String, maxBytes: Long = 512L * 1024L): String = withContext(Dispatchers.IO) {
         val file = guestFile(path)
         require(file.isFile) { "文件不存在：${normalizeGuestPath(path)}" }

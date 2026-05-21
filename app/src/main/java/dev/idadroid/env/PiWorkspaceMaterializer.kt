@@ -16,9 +16,7 @@ class PiWorkspaceMaterializer {
 
         listOf(workspace, uploadDir, sessionDir, piDir, idaDroidDir, piAgentDir, logsDir, scriptsDir).forEach { it.mkdirs() }
 
-        File(piDir, "APPEND_SYSTEM.md").writeTextIfMissing(agentInstructions())
-        File(piDir, "SYSTEM.md").writeTextIfMissing("# IDAdroid\n\nThis workspace is managed by the Android IDAdroid app.\n")
-        File(piAgentDir, "AGENTS.md").writeTextIfMissing(agentInstructions())
+        File(piDir, "APPEND_SYSTEM.md").writeTextIfMissing(appendSystemPrompt())
         File(piAgentDir, "settings.json").writeTextIfMissing(defaultPiSettings())
         File(piAgentDir, "rpc-stdio-guard.cjs").writeText(rpcStdioGuardScript())
         File(scriptsDir, "validate.sh").writeText(validateScript())
@@ -34,19 +32,26 @@ class PiWorkspaceMaterializer {
         if (!isFile) writeText(text)
     }
 
-    private fun agentInstructions(): String = """
+    private fun appendSystemPrompt(): String = """
         # IDAdroid workspace
-
         You are running inside IDAdroid's proot rootfs.
-
-        - Working directory: `/root/pi_workspace`.
-        - IDA home: `/root/ida-pro-9.3`.
-        - ida-mcp entry: `/root/ida-pro-9.3/ida-mcp`.
-        - ida-mcp/mcpc usage doc: `/root/ida-pro-9.3/IDA_MCP_MCPC_USAGE.md`.
-        - Attachments copied from Android live in `/root/pi_workspace/.upload`.
-        - pi sessions live in `/root/pi_workspace/.pi-sessions`.
-
-        For reverse-engineering tasks, first read `IDA_MCP_MCPC_USAGE.md`, then use `mcpc` to call `ida-mcp` only when IDA/MCP is running. If IDA GUI or MCP is not running, ask the user to launch IDA GUI from the app.
+        You are an expert CTF Reverse Engineering (RE) challenge designer.
+        The user prompt will provide a CTF RE challenge, which may include attachments.
+        Your goal is to solve this challenge and, based on the challenge and your solution steps, design a new CTF RE challenge.
+        You need to generate the following content:
+         1. Challenge Description / Problem Statement
+         2. Challenge Solution Results
+         3. Writeup (WP)
+        All of this content must be placed in a dedicated folder for each specific challenge under the pi_workspace directory (create a new folder for every new challenge).
+         * Working directory: /root/pi_workspace.
+         * IDA home: /root/ida-pro-9.3.
+         * ida-mcp entry: /root/ida-pro-9.3/ida-mcp.
+         * ida-mcp/mcpc usage doc: /root/ida-pro-9.3/IDA_MCP_MCPC_USAGE.md.
+         * Attachments copied from Android live in /root/pi_workspace/.upload.
+         * pi sessions live in /root/pi_workspace/.pi-sessions.
+        For reverse-engineering tasks, first read IDA_MCP_MCPC_USAGE.md, then use mcpc to call ida-mcp.
+        If you need to use Python, ensure you use a virtual environment. If you require missing dependencies, you may install them proactively.
+        Do not delete any files outside of the current project workspace! Do not modify any files in /sdcard/* (if needed, copy them to the current challenge workspace).
     """.trimIndent() + "\n"
 
     private fun defaultPiSettings(): String = """

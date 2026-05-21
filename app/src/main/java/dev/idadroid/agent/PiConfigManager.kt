@@ -17,8 +17,6 @@ class PiConfigManager(
     private val configFile get() = File(agentDir, "idadroid-pi-config.json")
     private val settingsFile get() = File(agentDir, "settings.json")
     private val modelsFile get() = File(agentDir, "models.json")
-    private val agentsFile get() = File(agentDir, "AGENTS.md")
-    private val systemFile get() = File(piDir, "SYSTEM.md")
     private val appendSystemFile get() = File(piDir, "APPEND_SYSTEM.md")
 
     private val lenientJson = Json { ignoreUnknownKeys = true; explicitNulls = false; prettyPrint = true }
@@ -38,9 +36,9 @@ class PiConfigManager(
             settingsText = settingsFile.readTextOrDefault(defaultSettingsText()),
             modelsText = modelsFile.readTextOrDefault("{}\n"),
             envText = JsonFormats.pretty.encodeToString(cfg.env),
-            systemPrompt = systemFile.readTextOrDefault("# IDAdroid\n\nThis workspace is managed by the Android IDAdroid app.\n"),
-            appendSystem = appendSystemFile.readTextOrDefault(defaultAgentInstructions()),
-            agentsMd = agentsFile.readTextOrDefault(defaultAgentInstructions()),
+            systemPrompt = "",
+            appendSystem = appendSystemFile.readTextOrDefault(defaultAppendSystemPrompt()),
+            agentsMd = "",
             extraArgsText = cfg.extraArgs.joinToString("\n"),
             materializedDir = "/root/pi_workspace/.idadroid/pi-agent"
         )
@@ -63,9 +61,7 @@ class PiConfigManager(
         configFile.writeText(JsonFormats.pretty.encodeToString(config))
         settingsFile.writeText(snapshot.settingsText.ifBlank { "{}" }.trimEnd() + "\n")
         modelsFile.writeText(snapshot.modelsText.ifBlank { "{}" }.trimEnd() + "\n")
-        systemFile.writeText(snapshot.systemPrompt.trimEnd() + "\n")
         appendSystemFile.writeText(snapshot.appendSystem.trimEnd() + "\n")
-        agentsFile.writeText(snapshot.agentsMd.trimEnd() + "\n")
     }
 
     fun defaultProvider(): String? = readUserConfig().defaultProvider?.takeIf { it.isNotBlank() }
@@ -116,18 +112,25 @@ class PiConfigManager(
         }
     """.trimIndent() + "\n"
 
-    private fun defaultAgentInstructions(): String = """
+    private fun defaultAppendSystemPrompt(): String = """
         # IDAdroid workspace
-
         You are running inside IDAdroid's proot rootfs.
-
-        - Working directory: `/root/pi_workspace`.
-        - IDA home: `/root/ida-pro-9.3`.
-        - ida-mcp entry: `/root/ida-pro-9.3/ida-mcp`.
-        - ida-mcp/mcpc usage doc: `/root/ida-pro-9.3/IDA_MCP_MCPC_USAGE.md`.
-        - Attachments copied from Android live in `/root/pi_workspace/.upload`.
-        - pi sessions live in `/root/pi_workspace/.pi-sessions`.
-
-        For reverse-engineering tasks, first read `IDA_MCP_MCPC_USAGE.md`, then use `mcpc` to call `ida-mcp` only when IDA/MCP is running. If IDA GUI or MCP is not running, ask the user to launch IDA GUI from the app.
+        You are an expert CTF Reverse Engineering (RE) challenge designer.
+        The user prompt will provide a CTF RE challenge, which may include attachments.
+        Your goal is to solve this challenge and, based on the challenge and your solution steps, design a new CTF RE challenge.
+        You need to generate the following content:
+         1. Challenge Description / Problem Statement
+         2. Challenge Solution Results
+         3. Writeup (WP)
+        All of this content must be placed in a dedicated folder for each specific challenge under the pi_workspace directory (create a new folder for every new challenge).
+         * Working directory: /root/pi_workspace.
+         * IDA home: /root/ida-pro-9.3.
+         * ida-mcp entry: /root/ida-pro-9.3/ida-mcp.
+         * ida-mcp/mcpc usage doc: /root/ida-pro-9.3/IDA_MCP_MCPC_USAGE.md.
+         * Attachments copied from Android live in /root/pi_workspace/.upload.
+         * pi sessions live in /root/pi_workspace/.pi-sessions.
+        For reverse-engineering tasks, first read IDA_MCP_MCPC_USAGE.md, then use mcpc to call ida-mcp.
+        If you need to use Python, ensure you use a virtual environment. If you require missing dependencies, you may install them proactively.
+        Do not delete any files outside of the current project workspace! Do not modify any files in /sdcard/* (if needed, copy them to the current challenge workspace).
     """.trimIndent() + "\n"
 }

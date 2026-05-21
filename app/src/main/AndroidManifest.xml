@@ -25,6 +25,16 @@
             android:name=".service.KeepAliveService"
             android:exported="false" />
 
+        <provider
+            android:name=".files.RootfsFileProvider"
+            android:authorities="${applicationId}.rootfs-file-provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/rootfs_file_provider_paths" />
+        </provider>
+
         <activity
             android:name=".terminal.ProotTerminalActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
