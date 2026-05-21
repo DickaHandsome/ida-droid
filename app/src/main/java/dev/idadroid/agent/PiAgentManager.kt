@@ -465,8 +465,13 @@ class PiAgentManager(
     private suspend fun handleAgentEvent(sessionId: String, event: JsonObject) {
         when (event.string("type")) {
             "agent_start", "turn_start", "message_start" -> setTurnActive(sessionId, true)
-            "agent_end", "turn_end", "message_end" -> {
+            "agent_end", "turn_end" -> {
                 setTurnActive(sessionId, false)
+                refreshRuntimeState(sessionId)
+            }
+            "message_end" -> {
+                setTurnActive(sessionId, false)
+                appendAssistantError(event.obj("message"))
                 refreshRuntimeState(sessionId)
             }
             "message_update" -> handleMessageUpdate(sessionId, event.obj("assistantMessageEvent") ?: return)
@@ -506,9 +511,28 @@ class PiAgentManager(
             }
             "compaction_end" -> {
                 setTurnActive(sessionId, false)
-                appendMessage(ChatMessage(newMessageId(), "system", if (event.boolean("aborted") == true) "上下文压缩已取消" else "上下文压缩完成", System.currentTimeMillis()))
+                appendMessage(ChatMessage(newMessageId(), "system", when {
+                    !event.string("errorMessage").isNullOrBlank() -> "上下文压缩失败：${event.string("errorMessage")}"
+                    event.boolean("aborted") == true -> "上下文压缩已取消"
+                    else -> "上下文压缩完成"
+                }, System.currentTimeMillis()))
                 refreshRuntimeState(sessionId)
             }
+            "extension_error" -> appendSystemError(
+                listOfNotNull(
+                    event.string("extensionPath")?.takeIf { it.isNotBlank() }?.let { "Extension: $it" },
+                    event.string("event")?.takeIf { it.isNotBlank() }?.let { "Event: $it" },
+                    event.string("error")
+                ).joinToString("\n").ifBlank { "extension error" }
+            )
+            "extension_ui_request" -> {
+                if (event.string("method") == "notify" && event.string("notifyType") == "error") {
+                    appendSystemError(event.string("message") ?: "extension notify error")
+                } else {
+                    appendRaw("event: ${event.string("type") ?: event.toString()}")
+                }
+            }
+            "auto_retry_end" -> if (event.boolean("success") == false) event.string("finalError")?.let { appendSystemError(it) }
             else -> appendRaw("event: ${event.string("type") ?: event.toString()}")
         }
     }
@@ -535,6 +559,19 @@ class PiAgentManager(
 
     private fun appendMessage(message: ChatMessage) {
         _state.update { it.copy(messages = it.messages + message) }
+    }
+
+    private fun appendAssistantError(message: JsonObject?) {
+        if (message?.string("role") != "assistant") return
+        appendSystemError(assistantErrorMessage(message) ?: return)
+    }
+
+    private fun appendSystemError(message: String) {
+        val text = formatAgentErrorMessage(message)
+        _state.update { old ->
+            if (old.messages.lastOrNull()?.let { it.role == "system" && it.text == text } == true) old
+            else old.copy(messages = old.messages + ChatMessage(newMessageId(), "system", text, System.currentTimeMillis()))
+        }
     }
 
     private fun applyAssistantDeltas(textDelta: String, thinkingDelta: String) {

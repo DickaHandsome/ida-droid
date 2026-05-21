@@ -48,6 +48,14 @@ fun normalizePiMessages(messages: List<JsonElement>): List<ChatMessage> {
                         timestamp = timestamp
                     )
                 }
+                assistantErrorMessage(obj)?.let { error ->
+                    out += ChatMessage(
+                        id = "$idx-$timestamp-assistant-error",
+                        role = "system",
+                        text = formatAgentErrorMessage(error),
+                        timestamp = timestamp
+                    )
+                }
                 parts.tools.forEachIndexed { toolIdx, tool ->
                     out += ChatMessage(
                         id = "$idx-$timestamp-tool-$toolIdx",
@@ -334,17 +342,35 @@ fun attachmentSummary(attachments: List<ChatAttachment>): String {
     ).joinToString("，").ifBlank { "[附件]" }
 }
 
+fun assistantErrorMessage(obj: JsonObject): String? {
+    val stopReason = obj.string("stopReason") ?: obj.string("reason")
+    val message = obj.string("errorMessage")
+        ?: obj.obj("error")?.string("message")
+        ?: obj.obj("error")?.string("error")
+        ?: obj.string("message")?.takeIf { stopReason == "error" }
+    return when {
+        !message.isNullOrBlank() -> message.trim()
+        stopReason == "error" -> "未知错误"
+        else -> null
+    }
+}
+
+fun formatAgentErrorMessage(error: String): String {
+    val trimmed = error.trim().ifBlank { "未知错误" }
+    return if (trimmed.startsWith("Agent 报错：")) trimmed else "Agent 报错：$trimmed"
+}
+
 fun pretty(value: JsonElement?): String = value?.let { runCatching { normalizerJson.encodeToString(it) }.getOrDefault(it.toString()) }.orEmpty()
 fun JsonElement?.asObject(): JsonObject? = this as? JsonObject
-fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
-fun JsonObject.boolean(key: String): Boolean? = this[key]?.jsonPrimitive?.booleanOrNull
-fun JsonObject.long(key: String): Long? = this[key]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
+fun JsonObject.long(key: String): Long? = (this[key] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
 fun JsonObject.timestampMillis(key: String): Long? {
-    val raw = this[key]?.jsonPrimitive?.contentOrNull?.trim() ?: return null
+    val raw = (this[key] as? JsonPrimitive)?.contentOrNull?.trim() ?: return null
     return raw.toLongOrNull() ?: runCatching { Instant.parse(raw).toEpochMilli() }.getOrNull()
 }
-fun JsonObject.int(key: String): Int? = this[key]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
 fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
-fun JsonObject.arrayStrings(key: String): List<String> = (this[key] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+fun JsonObject.arrayStrings(key: String): List<String> = (this[key] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: emptyList()
 fun newMessageId(): String = UUID.randomUUID().toString()
 fun String.removePrefixDataUrl(): String = replace(Regex("^data:[^,]+,"), "")

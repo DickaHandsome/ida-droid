@@ -61,6 +61,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -242,6 +243,10 @@ fun BoxedAgentLikeScreen(
     }
     val canSend = text.isNotBlank() || attachments.isNotEmpty()
     val lastMessage = agentState.messages.lastOrNull()
+    val visibleRuntimeError = agentState.error?.trim()?.takeIf { error ->
+        error.isNotBlank() && agentState.messages.none { it.role == "system" && it.text.contains(error) }
+    }
+    val visibleRuntimeErrorText = visibleRuntimeError?.let { runtimeErrorText(it, agentState.stderrTail) }
     val latestProgress = agentState.messages.lastOrNull { it.role == "tool" || (it.role == "assistant" && it.thinking?.isNotBlank() == true) }
     val autoOpenProgressId = if (agentState.isWorking) latestProgress?.id else null
     val latestProgressArgsKey = latestProgress?.toolArgs?.toString()?.let { "${it.length}:${it.hashCode()}" }
@@ -296,6 +301,7 @@ fun BoxedAgentLikeScreen(
                 stats = agentState.activeStats,
                 autoCompact = session.autoCompactionEnabled != false,
                 isWorking = agentState.isWorking,
+                status = agentState.status,
                 onSessions = { showSessions = true },
                 onTools = { showTools = true },
                 onRefresh = { manager.refresh(createDefaultIfReady = true); manager.loadMessages() }
@@ -308,6 +314,7 @@ fun BoxedAgentLikeScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     if (agentState.messagesLoading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                    visibleRuntimeErrorText?.let { errorText -> item { SystemMessageCard(errorText) } }
                     if (!agentState.messagesLoading && agentState.messages.isEmpty()) item { WelcomePrompts(onPrompt = { text = it }) }
                     items(agentState.messages, key = { it.id }) { msg ->
                         MessageBubble(
@@ -572,6 +579,7 @@ private fun ChatTopBar(
     stats: SessionStats?,
     autoCompact: Boolean,
     isWorking: Boolean,
+    status: String,
     onSessions: () -> Unit,
     onTools: () -> Unit,
     onRefresh: () -> Unit
@@ -584,7 +592,10 @@ private fun ChatTopBar(
                 Text(session.name, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(listOf(session.provider ?: "默认助手", session.model).filterNotNull().joinToString(" / "), fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (isWorking) StatusChip("working")
+            when {
+                isWorking -> StatusChip("working")
+                status == "error" -> StatusChip("error")
+            }
             IconButton(onClick = onTools, modifier = Modifier.size(38.dp)) { Icon(Icons.Rounded.FormatListBulleted, contentDescription = "Tools", modifier = Modifier.size(28.dp), tint = colors.onSurfaceVariant) }
             IconButton(onClick = onRefresh, modifier = Modifier.size(38.dp)) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新", modifier = Modifier.size(28.dp), tint = colors.onSurfaceVariant) }
         }
@@ -674,7 +685,33 @@ private fun MessageBubble(message: ChatMessage, autoOpenProgress: Boolean, isLat
             if (message.text.isNotBlank()) AssistantActions(message.text, onShowDialog)
         }
         "tool" -> ToolMessageCard(message, autoOpen = autoOpenProgress, autoCollapse = !isLatestMessage)
+        "system" -> SystemMessageCard(message.text)
         else -> SelectionContainer { AssistChip(onClick = {}, leadingIcon = { Icon(Icons.Rounded.Settings, contentDescription = null) }, label = { Text(message.text) }) }
+    }
+}
+
+private fun runtimeErrorText(error: String, stderrTail: String): String {
+    val primary = if (error.startsWith("Agent 报错：")) error else "Agent 报错：$error"
+    val stderr = stderrTail.trim().takeIf { it.isNotBlank() && !primary.contains(it) }
+    return if (stderr == null) primary else "$primary\n\nstderr:\n$stderr"
+}
+
+@Composable
+private fun SystemMessageCard(text: String) {
+    val isError = text.contains("报错") || text.contains("失败") || text.contains("error", ignoreCase = true)
+    val container = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+    val content = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        Modifier.fillMaxWidth(),
+        color = container.copy(alpha = .82f),
+        contentColor = content,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, content.copy(alpha = .24f))
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(if (isError) Icons.Rounded.ErrorOutline else Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+            SelectionContainer { Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f)) }
+        }
     }
 }
 

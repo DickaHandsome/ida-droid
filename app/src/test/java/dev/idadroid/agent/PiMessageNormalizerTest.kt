@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PiMessageNormalizerTest {
@@ -126,5 +127,57 @@ class PiMessageNormalizerTest {
         assertEquals("read", messages[1].toolName)
         assertEquals("done", messages[1].toolStatus)
         assertEquals("# Title", messages[1].toolResult)
+    }
+
+    @Test
+    fun rendersAssistantErrorMessagesFromHistory() {
+        val input = json.parseToJsonElement(
+            """
+            [
+              {
+                "type": "message",
+                "timestamp": 123,
+                "message": {
+                  "role": "assistant",
+                  "content": [],
+                  "stopReason": "error",
+                  "errorMessage": "No API key for provider: test"
+                }
+              }
+            ]
+            """.trimIndent()
+        ) as JsonArray
+
+        val messages = normalizePiMessages(input.toList())
+
+        assertEquals(1, messages.size)
+        assertEquals("system", messages[0].role)
+        assertEquals("Agent 报错：No API key for provider: test", messages[0].text)
+    }
+
+    @Test
+    fun keepsAssistantTextAndAlsoShowsErrorMessage() {
+        val input = json.parseToJsonElement(
+            """
+            [
+              {
+                "type": "message",
+                "timestamp": 123,
+                "message": {
+                  "role": "assistant",
+                  "content": [{"type":"text","text":"partial answer"}],
+                  "stopReason": "error",
+                  "errorMessage": "provider failed"
+                }
+              }
+            ]
+            """.trimIndent()
+        ) as JsonArray
+
+        val messages = normalizePiMessages(input.toList())
+
+        assertEquals(2, messages.size)
+        assertTrue(messages.any { it.role == "assistant" && it.text == "partial answer" })
+        assertTrue(messages.any { it.role == "system" && it.text == "Agent 报错：provider failed" })
     }
 }
