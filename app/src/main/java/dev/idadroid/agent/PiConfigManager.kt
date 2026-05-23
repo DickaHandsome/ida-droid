@@ -133,6 +133,7 @@ class PiConfigManager(
          * pi sessions live in /root/pi_workspace/.pi-sessions.
         For reverse-engineering tasks, first read IDA_MCP_MCPC_USAGE.md, then use mcpc to call ida-mcp.
         If you need to use Python, ensure you use a virtual environment. If you require missing dependencies, you may install them proactively.
+        jadx, python, npm is installed.
         Do not delete any files outside of the current project workspace! Do not modify any files in /sdcard/* (if needed, copy them to the current challenge workspace).
     """.trimIndent() + "\n"
 }
